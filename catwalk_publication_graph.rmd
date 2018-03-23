@@ -1,0 +1,88 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+
+```{r, eval = F}
+cat_df2 <- data.frame(cat_sum_df)
+viz_func <- function(data, x, y, z, y.min){
+  ggplot(data, 
+       aes(x = x, y = y, fill = z, group = z)) + 
+  geom_errorbar(aes(ymin = y, 
+                    ymax = y + y.min), 
+                position = "dodge", width = 0.5) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, 
+           position = "dodge")
+}
+
+viz_func(cat_df2, age, front_bos_mean, gt, run_speed_se)
+```
+
+
+
+```{r}
+head(cat_sum_df)
+```
+
+
+
+
+
+
+
+run_speed graph
+
+```{r}
+pd_bar <- position_dodge(width = 0.9)
+ggplot(cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt, group = gt)) + 
+  geom_errorbar(aes(ymin = run_speed_mean, 
+                    ymax = run_speed_mean + run_speed_se), position = pd_bar, width = 0.5) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  facet_grid(~sex)
+```
+
+bos_front graph
+
+```{r}
+ggplot(cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt, group = gt)) + 
+  geom_errorbar(aes(ymin = run_speed_mean, 
+                    ymax = run_speed_mean + run_speed_se), position = pd_bar, width = 0.5) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  facet_grid(~sex)
+
+
+```
+
+This one is working!
+```{r,eval = F}
+cat_sum_df2 <- cat_df %>% 
+  group_by(age, gt, sex) %>% 
+  summarize_at(vars(run_speed:hind_stepcyc), funs(mean, se))
+```
+
+```{r}
+pd_bar <- position_dodge(width = 0.9)
+
+ggplot(data = cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt,  
+           group = gt)) +
+  geom_errorbar(aes(ymin = run_speed_mean - run_speed_se, 
+                    ymax = run_speed_mean + run_speed_se), width = 0.5, position = pd_bar) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  
+  facet_grid(~sex) +
+  theme_bw() +
+  scale_fill_manual(values = c("white","black")) +
+  theme(legend.position = "NULL",
+        legend.title = element_blank(),
+        axis.title = element_text(size = 20),
+        legend.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 12))
+```

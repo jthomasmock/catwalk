@@ -1,0 +1,155 @@
+---
+title: "Final Catwalk Analysis"
+author: "Tom"
+date: "March 1, 2018"
+output: html_document
+---
+
+```{r, setup, message = F, warning=F}
+#====================================
+library(tidyverse)
+library(broom)
+library(skimr)
+library(purrr)
+library(agricolae)
+library(emmeans)
+library(stringr)
+library(writexl)
+library(beepr)
+#====================================
+```
+
+
+### Read data and take a look
+
+```{r, read in data}
+raw_catwalk <- read_csv("catwalk_data.csv")
+```
+
+```{r}
+glimpse(raw_catwalk)
+```
+  
+*** 
+  
+###
+
+```{r}
+cat_df <- raw_catwalk %>% 
+  filter(gt != "1") %>% 
+  mutate(age = factor(age, labels = c("4 Month", "10 Month", "17 Month")),
+         gt  = factor(gt, labels = c("GCLM +/+", "GCLM -/-")))
+```
+### Custom function to calculate standard error (SE)
+  
+***
+  
+```{r}
+
+se <- function(x) {
+  sd(x)/sqrt(length(x))
+}
+```
+  
+***
+  
+### Descriptive Statistics
+Summarize at multiple columns and apply multiple functions, in this case we calculate the mean and se for all of our outcome measures.
+
+```{r}
+cat_sum_df <- cat_df %>% 
+  group_by(sex, age, gt) %>% 
+  summarize_at(vars(run_speed:hind_stepcyc), funs(mean, se)) 
+cat_sum_df
+
+```
+  
+***
+  
+### Publication Graph 
+
+```{r}
+pd_bar <- position_dodge(width = 0.9)
+
+ggplot(data = cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt,  
+           group = gt)) +
+  geom_errorbar(aes(ymin = run_speed_mean - run_speed_se, 
+                    ymax = run_speed_mean + run_speed_se), width = 0.5, position = pd_bar) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  
+  facet_grid(~sex) +
+  theme_bw() +
+  scale_fill_manual(values = c("white","black")) +
+  theme(legend.position = "NULL",
+        legend.title = element_blank(),
+        axis.title = element_text(size = 20),
+        legend.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 12))
+```
+  
+***
+
+### Prep for analysis, calculate ANOVAs and post-hocs
+  
+```{r}
+# create dataframe for analysis
+catstat_df <- raw_catwalk %>% 
+  filter(gt != "1") %>% 
+  mutate(age = factor(age, labels = c("YG", "AD", "OLD")),
+         gt = factor(gt, labels = c("WT", "KO")),
+         sex = factor(sex, labels = c("M", "F")))
+
+catstat_df %>% 
+  group_by(sex) %>% 
+  count()
+```
+  
+***
+  
+```{r}
+# have to set to helmert contrasts fpr type 3 SS ANOVAs
+options(contrasts = c("contr.helmert", "contr.poly"))
+```
+  
+***
+  
+```{r}
+# calculate catwalk ANOVAs and write to Excel
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ car::Anova(lm(.x ~ sex * age * gt, data = catstat_df))) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)), .id = 'source') %>% 
+  write_xlsx(., "catwalk_anovas.xlsx")
+
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ car::Anova(lm(.x ~ sex * age * gt, data = catstat_df, contrasts = c("contr.helmert", "contr.poly")), type = 3)) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)), .id = 'source') %>% 
+  write_xlsx(., "catwalk_anovas_type3.xlsx")
+
+
+# calculate LSD post-hocs and write to excel
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map( ~ pairwise.t.test(.x,
+                  catstat_df$sex:catstat_df$age:catstat_df$gt, 
+                  p.adj = "none")) %>% 
+  map( ~ tidy(.x)) %>% 
+  map( ~ mutate(.x, p.value = round(p.value, 5))) %>%
+  map( ~ filter(.x, p.value < 0.051)) %>% 
+  write_xlsx(., "lsd_test.xlsx") # dont forget to rename
+```
+
+```{r}
+.Last <- function() { # Beep on exiting session
+  beepr::beep(4)
+  Sys.sleep(1)
+}
+.Last
+```
+

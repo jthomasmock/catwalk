@@ -1,0 +1,452 @@
+---
+title: "Catwalk Analysis"
+author: "Tom"
+date: "February 22, 2018"
+output: html_document
+---
+
+```{r, setup, message = F, warning=F}
+library(tidyverse)
+library(broom)
+library(skimr)
+library(purrr)
+library(agricolae)
+library(emmeans)
+library(stringr)
+library(writexl)
+```
+
+
+```{r}
+# have to set to helmert contrasts
+options(contrasts = c("contr.helmert", "contr.poly"))
+
+# custom function to generate a tidy type 3 ANOVA
+type_3_aov <- function(x, dataframe) {
+  broom::tidy(car::Anova(lm(x ~ sex * age * gt, 
+                            data=dataframe), 
+                         type=3)) %>% 
+    mutate(p.value = round(p.value, 3))
+}
+
+# custom function to generate a tukey post-hoc
+post_hoc_lm <- function(x, dataframe){
+  summary(lsmeans::lsmeans(lm(x ~ sex * age * gt, data = dataframe), 
+                           pairwise ~ sex:age:gt, 
+                           adjust = "tukey"))$contrasts %>% 
+    mutate(p.value = round(p.value, 3)) %>% 
+    filter(p.value < 0.051)
+}
+
+```
+
+```{r, eval = F, echo = F}
+# purr functions for calculating all things of interest at once
+
+# this works
+catstat_df %>% 
+  select(run_speed:run_max_variation) %>% 
+  map(~ car::Anova(lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt))) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)))
+  
+# this works!  
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt)) %>% 
+  map(~ lsmeans::lsmeans(.x, pairwise ~ catstat_df$sex:catstat_df$age:catstat_df$gt, adjust = "tukey")$contrasts) %>% 
+  map(~ tidy(.x)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5))) %>% 
+  map(~ filter(.x, p.value < 0.051))
+
+#this works!
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map( ~ pairwise.t.test(.x,
+                  catstat_df$sex:catstat_df$age:catstat_df$gt, 
+                  p.adj = "none")) %>% 
+  map( ~ tidy(.x)) %>% 
+  map( ~ mutate(.x, p.value = round(p.value, 5))) %>%
+  map( ~ filter(.x, p.value < 0.051))
+
+```
+
+
+
+
+```{r, read in data}
+raw_catwalk <- read_csv("catwalk_data.csv")
+```
+
+
+```{r}
+skim(raw_catwalk)
+head(raw_catwalk)
+```
+
+```{r}
+cat_df <- raw_catwalk %>% 
+  filter(gt != "1" & uid != 928211 & uid != 841350) %>% 
+  mutate(age = factor(age, labels = c("4 Month", "10 Month", "17 Month")),
+         gt = factor(gt, labels = c("GCLM +/+", "GCLM -/-")))
+```
+Mental check
+```{r}
+cat_df %>% 
+  filter(age == "17 Month" & run_speed > 70) %>% 
+  print()
+```
+
+Check distributions of the data.
+```{r}
+ggplot(cat_df, aes(x = run_speed, fill = age)) + geom_density(alpha = 0.5)
+ggplot(cat_df, aes(x = age, y = run_speed, fill = age)) + geom_boxplot() + facet_grid(~sex)
+```
+
+Custom function to calculate standard error (SE)
+```{r}
+
+se <- function(x) {
+  sd(x)/sqrt(length(x))
+}
+```
+
+Summarize at multiple columns and apply multiple functions, in this case we calculate the mean and se for all of our outcome measures!
+
+```{r}
+cat_sum_df <- cat_df %>% 
+  group_by(sex, age, gt) %>% 
+  summarize_at(vars(run_speed:hind_stepcyc), funs(mean, se)) 
+cat_sum_df
+
+```
+
+
+
+```{r, eval = F}
+cat_df2 <- data.frame(cat_sum_df)
+viz_func <- function(data, x, y, z, y.min){
+  ggplot(data, 
+       aes(x = x, y = y, fill = z, group = z)) + 
+  geom_errorbar(aes(ymin = y, 
+                    ymax = y + y.min), 
+                position = "dodge", width = 0.5) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, 
+           position = "dodge")
+}
+
+viz_func(cat_df2, age, front_bos_mean, gt, run_speed_se)
+```
+
+
+
+```{r}
+head(cat_sum_df)
+```
+
+
+
+
+
+
+
+run_speed graph
+
+```{r}
+pd_bar <- position_dodge(width = 0.9)
+ggplot(cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt, group = gt)) + 
+  geom_errorbar(aes(ymin = run_speed_mean, 
+                    ymax = run_speed_mean + run_speed_se), position = pd_bar, width = 0.5) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  facet_grid(~sex)
+```
+
+bos_front graph
+
+```{r}
+ggplot(cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt, group = gt)) + 
+  geom_errorbar(aes(ymin = run_speed_mean, 
+                    ymax = run_speed_mean + run_speed_se), position = pd_bar, width = 0.5) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  facet_grid(~sex)
+
+
+```
+
+This one is working!
+```{r,eval = F}
+cat_sum_df2 <- cat_df %>% 
+  group_by(age, gt, sex) %>% 
+  summarize_at(vars(run_speed:hind_stepcyc), funs(mean, se))
+```
+
+```{r}
+pd_bar <- position_dodge(width = 0.9)
+
+ggplot(data = cat_sum_df, 
+       aes(x = age, y = run_speed_mean, fill = gt,  
+           group = gt)) +
+  geom_errorbar(aes(ymin = run_speed_mean - run_speed_se, 
+                    ymax = run_speed_mean + run_speed_se), width = 0.5, position = pd_bar) +
+  geom_bar(color = "black", stat = "identity", width = 0.7, position = pd_bar) +
+  
+  facet_grid(~sex) +
+  theme_bw() +
+  scale_fill_manual(values = c("white","black")) +
+  theme(legend.position = "NULL",
+        legend.title = element_blank(),
+        axis.title = element_text(size = 20),
+        legend.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 12))
+```
+
+
+```{r}
+catstat_df <- raw_catwalk %>% 
+  filter(gt != "1" & uid != 928211 & uid != 841350) %>% 
+  mutate(age = factor(age, labels = c("YG", "AD", "OLD")),
+         gt = factor(gt, labels = c("WT", "KO")),
+         sex = factor(sex, labels = c("M", "F")))
+
+catstat_df %>% 
+  group_by(sex) %>% 
+  count()
+```
+Speed ANOVA
+```{r}
+speed_aov <- aov(run_speed~sex*age*gt, data = catstat_df)
+summary(speed_aov)
+TukeyHSD(speed_aov, which = 'sex:age:gt')
+# call and save the pair.t.test
+speed_lsd <- tidy(pairwise.t.test(catstat_df$run_speed,
+                             catstat_df$sex:catstat_df$age:catstat_df$gt, 
+                             p.adj = "none")) %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+                
+speed_lsd
+
+# type 3 ANOVA and corresponding post-hoc
+speed_aov_3 <- type_3_aov(catstat_df$run_speed, catstat_df)
+speed_aov_3
+speed_posthoc <- post_hoc_lm(catstat_df$run_speed, catstat_df)
+```
+
+front_bos ANOVA
+```{r}
+front_bos_aov <- aov(front_bos~age*gt, data = catstat_df)
+summary(front_bos_aov)
+TukeyHSD(front_bos_aov)
+
+# call and save the pair.t.test
+front_bos_lsd <- tidy(pairwise.t.test(catstat_df$front_bos,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+front_bos_lsd
+```
+
+hind_bos ANOVA
+```{r}
+hind_bos_aov <- aov(hind_bos~age*gt, data = catstat_df)
+summary(hind_bos_aov)
+TukeyHSD(hind_bos_aov)
+
+# call and save the pair.t.test
+hind_bos_lsd <- tidy(pairwise.t.test(catstat_df$hind_bos,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+hind_bos_lsd
+```
+
+front_bos ANOVA
+```{r}
+front_bos_aov <- aov(front_bos~age*gt, data = catstat_df)
+summary(front_bos_aov)
+TukeyHSD(front_bos_aov)
+
+# call and save the pair.t.test
+front_bos_lsd <- tidy(pairwise.t.test(catstat_df$front_bos,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+front_bos_lsd
+```
+
+front_strlen ANOVA
+```{r}
+front_strlen_aov <- aov(front_strlen~age*gt, data = catstat_df)
+summary(front_strlen_aov)
+TukeyHSD(front_strlen_aov)
+
+# call and save the pair.t.test
+front_strlen_lsd <- tidy(pairwise.t.test(catstat_df$front_strlen,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+front_strlen_lsd
+```
+
+hind_strlen ANOVA
+```{r}
+hind_strlen_aov <- aov(hind_strlen~age*gt, data = catstat_df)
+summary(hind_strlen_aov)
+TukeyHSD(hind_strlen_aov)
+
+# call and save the pair.t.test
+hind_strlen_lsd <- tidy(pairwise.t.test(catstat_df$hind_strlen,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+hind_strlen_lsd
+
+```
+front_swingspd ANOVA
+```{r}
+front_swingspd_aov <- aov(front_swingspd~age*gt, data = catstat_df)
+summary(front_swingspd_aov)
+TukeyHSD(front_swingspd_aov)
+
+# call and save the pair.t.test
+front_swingspd_lsd <- tidy(pairwise.t.test(catstat_df$front_swingspd,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+front_swingspd_lsd
+```
+
+hind_swingspd ANOVA
+```{r}
+hind_swingspd_aov <- aov(hind_swingspd~age*gt, data = catstat_df)
+summary(hind_swingspd_aov)
+TukeyHSD(hind_swingspd_aov)
+
+# call and save the pair.t.test
+hind_swingspd_lsd <- tidy(pairwise.t.test(catstat_df$hind_swingspd,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+hind_swingspd_lsd
+```
+
+front_stepcyc ANOVA
+```{r}
+front_stepcyc_aov <- aov(front_stepcyc~age*gt, data = catstat_df)
+summary(front_stepcyc_aov)
+TukeyHSD(front_stepcyc_aov)
+
+# call and save the pair.t.test
+front_stepcyc_lsd <- tidy(pairwise.t.test(catstat_df$front_stepcyc,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+front_stepcyc_lsd
+```
+
+hind_stepcyc ANOVA
+```{r, eval = F, echo = F}
+hind_stepcyc_aov <- aov(hind_stepcyc~age*gt, data = catstat_df)
+summary(hind_stepcyc_aov)
+TukeyHSD(hind_stepcyc_aov)
+
+# call and save the pair.t.test
+hind_stepcyc_lsd <- tidy(pairwise.t.test(catstat_df$hind_stepcyc,
+                             catstat_df$age:catstat_df$gt, 
+                             p.adj = "none"))  %>% 
+              mutate(p.value = round(p.value, digits = 3)) %>% 
+              filter(p.value < 0.051)
+hind_stepcyc_lsd
+
+```
+
+```{r}
+# calculate catwalk ANOVAs and write to Excel
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ car::Anova(lm(.x ~ sex * age * gt, data = catstat_df))) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)), .id = 'source') %>% 
+  write_xlsx(., "catwalk_anovas.xlsx")
+
+# calculate LSD post-hocs and write to excel
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map( ~ pairwise.t.test(.x,
+                  catstat_df$sex:catstat_df$age:catstat_df$gt, 
+                  p.adj = "none")) %>% 
+  map( ~ tidy(.x)) %>% 
+  map( ~ mutate(.x, p.value = round(p.value, 5))) %>%
+  map( ~ filter(.x, p.value < 0.051)) %>% 
+  write_xlsx(., "catwalk_lsds.xlsx")
+```
+
+
+```{r, echo = F, eval = F}
+# purr functions for calculating all things of interest at once
+
+# this works
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ car::Anova(lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt))) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)))
+
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ car::Anova(lm(.x ~ sex * age * gt, data = catstat_df))) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)), .id = 'source') %>% 
+  write_xlsx(., "catwalk_anovas.xlsx")
+
+# this works!  
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt)) %>% 
+  map(~ lsmeans::lsmeans(.x, pairwise ~ catstat_df$sex:catstat_df$age:catstat_df$gt, adjust = "tukey")$contrasts) %>% 
+  map(~ tidy(.x)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5))) %>% 
+  map(~ filter(.x, p.value < 0.051))
+
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ lm(.x ~ sex * age * gt, data = catstat_df)) %>% 
+  map(~ lsmeans::lsmeans(.x, pairwise ~ sex:age:gt, adjust = "tukey")$contrasts) %>% 
+  map(~ tidy(.x)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5))) %>% 
+  map(~ filter(.x, p.value < 0.051))
+
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ lm(.x ~ sex * age * gt, data = catstat_df)) %>% 
+  map(~ lsmeans::lsmeans(.x, pairwise ~ sex:age:gt, adjust = "tukey", data = catstat_df)$contrasts) %>% 
+  map(~ tidy(.x)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5))) %>% 
+  map(~ filter(.x, p.value < 0.051))
+
+#this works!
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map( ~ pairwise.t.test(.x,
+                  catstat_df$sex:catstat_df$age:catstat_df$gt, 
+                  p.adj = "none")) %>% 
+  map( ~ tidy(.x)) %>% 
+  map( ~ mutate(.x, p.value = round(p.value, 5))) %>%
+  map( ~ filter(.x, p.value < 0.051)) %>% 
+  write_xlsx(., "catwalk_lsds.xlsx")
+
+lsd_post$run_speed
+
+```

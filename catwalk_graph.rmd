@@ -1,0 +1,94 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(broom)
+library(skimr)
+library(purrr)
+library(agricolae)
+library(emmeans)
+library(stringr)
+library(writexl)
+```
+
+
+```{r, read in data}
+raw_catwalk <- read_csv("catwalk_data.csv")
+```
+
+
+```{r}
+skim(raw_catwalk)
+head(raw_catwalk)
+```
+
+```{r}
+cat_df <- raw_catwalk %>% 
+  filter(gt != "1" & uid != 928211 & uid != 841350) %>% 
+  mutate(age = factor(age, labels = c("4 Month", "10 Month", "17 Month")),
+         gt = factor(gt, labels = c("GCLM +/+", "GCLM -/-")))
+```
+
+
+# Mental check
+```{r}
+cat_df %>% 
+  filter(age == "17 Month" & run_speed > 70) %>% 
+  print()
+```
+
+Check distributions of the data.
+```{r}
+ggplot(cat_df, aes(x = run_speed, fill = age)) + geom_density(alpha = 0.5)
+ggplot(cat_df, aes(x = age, y = run_speed, fill = age)) + geom_boxplot() + facet_grid(~sex)
+```
+
+```{r}
+facet_graph <- cat_df %>% 
+  gather(iv, dv = front_bos:hind_stepcyc) 
+g1 <-  ggplot(facet_graph, aes(x = run_speed, y = value)) +
+  geom_point() +
+  facet_grid(iv~sex, scales = "free_y") +
+  geom_smooth(method= "lm", color = "black") +
+  geom_point(aes(fill = age), shape = 21, color = "black") +
+  scale_fill_manual(values = c("white", "grey", "black"))
+  
+g1
+ggsave("")
+```
+
+```{r}
+log_step <- cat_df %>% 
+  mutate(step_log10 =log(front_stepcyc))
+
+log_step
+
+ggplot(log_step, aes(x = run_speed, y = step_log10)) +
+  geom_point() +
+  geom_smooth(method= "lm", color = "black") +
+  geom_point(aes(fill = age), shape = 21, color = "black") +
+  scale_fill_manual(values = c("white", "grey", "black"))
+
+```
+
+
+Custom function to calculate standard error (SE)
+```{r}
+
+se <- function(x) {
+  sd(x)/sqrt(length(x))
+}
+```
+
+Summarize at multiple columns and apply multiple functions, in this case we calculate the mean and se for all of our outcome measures!
+
+```{r}
+cat_sum_df <- cat_df %>% 
+  group_by(sex, age, gt) %>% 
+  summarize_at(vars(run_speed:hind_stepcyc), funs(mean, se)) 
+cat_sum_df
+
+```
