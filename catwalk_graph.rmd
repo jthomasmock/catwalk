@@ -21,7 +21,6 @@ raw_catwalk <- read_csv("catwalk_data.csv")
 
 
 ```{r}
-skim(raw_catwalk)
 head(raw_catwalk)
 ```
 
@@ -43,7 +42,7 @@ cat_df %>%
 Check distributions of the data.
 ```{r}
 ggplot(cat_df, aes(x = run_speed, fill = age)) + geom_density(alpha = 0.5)
-ggplot(cat_df, aes(x = age, y = run_speed, fill = age)) + geom_boxplot() + facet_grid(~sex)
+ggplot(filter(cat_df, age != "10 Month"), aes(x = age, y = run_speed, fill = age)) + geom_boxplot() + facet_grid(~sex)
 ```
 
 ```{r}
@@ -52,8 +51,8 @@ facet_graph <- cat_df %>%
 g1 <-  ggplot(facet_graph, aes(x = run_speed, y = value)) +
   geom_point() +
   facet_grid(iv~sex, scales = "free_y") +
-  geom_smooth(method= "lm", color = "black") +
-  geom_point(aes(fill = age), shape = 21, color = "black") +
+  geom_smooth(method= "lm", color = "black", se = F) +
+  geom_point(aes(fill = age), size = 3, shape = 21, color = "black") +
   scale_fill_manual(values = c("white", "grey", "black"))
   
 g1
@@ -61,16 +60,40 @@ ggsave("")
 ```
 
 ```{r}
+facet_graph <- cat_df %>% 
+  gather(iv, dv = front_bos:hind_stepcyc) 
+
+ggplot(cat_df, aes(x = run_speed, y = hind_strlen, fill = age)) +
+  geom_point() +
+  facet_grid(~sex) +
+  geom_smooth(aes(color = age), method= "lm", se = F) +
+  geom_point(aes(fill = age), size = 3, shape = 21, color = "black") +
+  scale_fill_manual(values = c("white", "grey", "black"))
+
+head(cat_df)
+
+```
+```{r}
+ggplot(cat_df, aes(x = run_speed, y = front_strlen, fill = age)) +
+  geom_point() +
+  facet_grid(~sex) +
+  geom_smooth(aes(color = age), method= "lm", se = F) +
+  geom_point(aes(fill = age), size = 3, shape = 21, color = "black") +
+  scale_fill_manual(values = c("white", "grey", "black"))
+```
+
+```{r}
 log_step <- cat_df %>% 
-  mutate(step_log10 =log(front_stepcyc))
+  mutate(step_log10 =log10(front_stepcyc)) %>% 
+  filter(age != "10 Month")
 
 log_step
 
 ggplot(log_step, aes(x = run_speed, y = step_log10)) +
   geom_point() +
-  geom_smooth(method= "lm", color = "black") +
-  geom_point(aes(fill = age), shape = 21, color = "black") +
-  scale_fill_manual(values = c("white", "grey", "black"))
+  geom_smooth(method= "lm", color = "black", se = F) +
+  geom_point(aes(fill = age), size = 3, shape = 21, color = "black") +
+  scale_fill_manual(values = c("white", "black"))
 
 ```
 
