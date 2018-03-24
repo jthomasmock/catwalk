@@ -3,6 +3,51 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+```{r}
+library(tidyverse)
+library(ez)
+library(car)
+library(broom)
+library(readxl)
+library(writexl)
+library(lsmeans)
+```
+
+
+```{r, eval = F}
+catstat_df <- raw_catwalk %>% 
+  filter(gt != "1" & uid != 928211 & uid != 841350) %>% 
+  mutate(age = factor(age, labels = c("YG", "AD", "OLD")),
+         gt = factor(gt, labels = c("WT", "KO")),
+         sex = factor(sex, labels = c("M", "F")))
+
+catstat_df %>% 
+  group_by(sex) %>% 
+  count()
+```
+
+```{r}
+catstat_df <- read.csv("catstat.csv")
+catstat_df <- catstat_df %>% 
+  mutate(age = factor(age, labels = c("YG", "AD", "OLD")),
+         gt = factor(gt, labels = c("WT", "KO")),
+         sex = factor(sex, labels = c("M", "F")))
+  
+```
+
+
+
+```{r, eval = F}
+catstat_df <- raw_catwalk %>% 
+  filter(gt != "1" & uid != 928211 & uid != 841350) %>% 
+  mutate(age = factor(age, labels = c("YG", "AD", "OLD")),
+         gt = factor(gt, labels = c("WT", "KO")),
+         sex = factor(sex, labels = c("M", "F")))
+
+catstat_df %>% 
+  group_by(sex) %>% 
+  count()
+```
 
 ```{r}
 # have to set to helmert contrasts
@@ -32,23 +77,28 @@ post_hoc_lm <- function(x, dataframe){
 ```{r, eval = F, echo = F}
 # purr functions for calculating all things of interest at once
 
-# this works
-catstat_df %>% 
-  select(run_speed:run_max_variation) %>% 
-  map(~ car::Anova(lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt))) %>% 
-  map(~ broom::tidy(.)) %>% 
-  map(~ mutate(.x, p.value = round(p.value, 5)))
-  
-# this works!  
+# models well
 catstat_df %>% 
   select(run_speed:hind_stepcyc) %>% 
-  map(~ lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt)) %>% 
-  map(~ lsmeans::lsmeans(.x, pairwise ~ catstat_df$sex:catstat_df$age:catstat_df$gt, adjust = "tukey")$contrasts) %>% 
+  map(~ car::Anova(lm(.x ~ catstat_df$sex * catstat_df$age * catstat_df$gt))) %>% 
+  map(~ broom::tidy(.)) %>% 
+  map(~ mutate(.x, p.value = round(p.value, 5)))  %>% 
+  map( ~ mutate(.x, sig = case_when(p.value <= 0.05 ~ "*",
+                                p.value > 0.05 ~ " "))) %>% 
+  write_xlsx(., "test.xlsx")
+
+  
+# tukey posthocs
+catstat_df %>% 
+  select(run_speed:hind_stepcyc) %>% 
+  map(~ lm(.x ~ sex * age * gt, data = catstat_df)) %>% 
+  map(~ lsmeans::lsmeans(.x, pairwise ~ sex:age:gt, data = catstat_df, adjust = "tukey")$contrasts) %>% 
   map(~ tidy(.x)) %>% 
   map(~ mutate(.x, p.value = round(p.value, 5))) %>% 
-  map(~ filter(.x, p.value < 0.051))
+  map(~ filter(.x, p.value < 0.051)) %>% 
+  write_xlsx(., "test.xlsx")
 
-#this works!
+# uncorrected lsd posthocs
 catstat_df %>% 
   select(run_speed:hind_stepcyc) %>% 
   map( ~ pairwise.t.test(.x,
@@ -56,23 +106,14 @@ catstat_df %>%
                   p.adj = "none")) %>% 
   map( ~ tidy(.x)) %>% 
   map( ~ mutate(.x, p.value = round(p.value, 5))) %>%
-  map( ~ filter(.x, p.value < 0.051))
+  map( ~ filter(.x, p.value < 0.051)) %>% 
+  map( ~ select(.x, group2, group1, p.value)) %>% 
+  map( ~ mutate(.x, sig = case_when(p.value <= 0.05 ~ "*",
+                                p.value > 0.05 ~ " ")))
 
 ```
 
 
-
-```{r}
-catstat_df <- raw_catwalk %>% 
-  filter(gt != "1" & uid != 928211 & uid != 841350) %>% 
-  mutate(age = factor(age, labels = c("YG", "AD", "OLD")),
-         gt = factor(gt, labels = c("WT", "KO")),
-         sex = factor(sex, labels = c("M", "F")))
-
-catstat_df %>% 
-  group_by(sex) %>% 
-  count()
-```
 Speed ANOVA
 ```{r}
 speed_aov <- aov(run_speed~sex*age*gt, data = catstat_df)
